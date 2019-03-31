@@ -1,0 +1,57 @@
+# !/usr/bin/python
+# -*- coding:utf-8 -*-
+
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn import datasets
+from sklearn import svm
+from sklearn.model_selection import cross_val_score
+from sklearn import preprocessing
+from sklearn.pipeline import make_pipeline
+from sklearn.model_selection import ShuffleSplit
+import pandas as pd
+from sklearn import metrics
+
+#iris = datasets.load_iris()
+
+#X_train, X_test, y_train, y_test = train_test_split(iris.data, iris.target, test_size=0.4, random_state=0)
+
+#clf = svm.SVC(kernel='linear', C=1)
+# scores = cross_val_score(clf, iris.data, iris.target, cv=5, scoring='f1_macro')
+#
+# #给出了平均得分和95%置信区间。
+#print("Accuracy: %0.2f (+/- %0.2f)" % (scores.mean(), scores.std() * 2))
+
+# n_samples = iris.data.shape[0]
+# cv = ShuffleSplit(n_splits=5, test_size=0.2, random_state=100)#另外一种策略
+# clf = make_pipeline(preprocessing.StandardScaler(), svm.SVC(C=1))
+# scores = cross_val_score(clf, iris.data, iris.target, cv=cv)
+# clf = make_pipeline(preprocessing.StandardScaler(), svm.SVC(C=1))
+# scores = cross_val_score(clf, iris.data, iris.target, cv=5)
+#
+# print("Accuracy: %0.2f (+/- %0.2f)" % (scores.mean(), scores.std() * 2))
+#####看到3.1.1.1 The cross_validate function and multiple metric evaluation / 2019.3.28
+
+# from sklearn.model_selection import KFold
+#
+# X = ["a", "b", "c", "d"]
+# kf = KFold(n_splits=2)
+
+
+Datas = pd.read_csv('winequality-red.csv', sep=';', header=0)
+
+X = np.array(Datas.drop('quality', 1))
+y = np.array(Datas['quality'])
+
+# clf = svm.SVC(kernel='linear', C=1)
+clf = make_pipeline(preprocessing.StandardScaler(), svm.SVC(kernel='rbf', C=1, decision_function_shape='ovo'))#标准化之后速度相当快
+scores = cross_val_score(clf, X, y, cv=5)
+print("Accuracy: %0.2f (+/- %0.2f)" % (scores.mean(), scores.std() * 2))
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.4, random_state=0)
+#clf = svm.SVC(kernel='rbf', C=1)
+clf.fit(X_train, y_train)
+predict = clf.predict(X_test)
+print predict
+print y_test
+print metrics.accuracy_score(y_test, predict)
