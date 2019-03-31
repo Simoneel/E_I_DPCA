@@ -1,0 +1,196 @@
+# !/usr/bin/python
+# -*- coding:utf-8 -*-
+import numpy as np
+import random
+from collections import Counter
+# from sklearn.datasets import load_iris
+import pandas as pd
+from sklearn import metrics
+
+def dist(x, y):
+    return np.sqrt(sum((x - y) ** 2))
+
+def sigma(x, y):
+    return len(x) - sum(x == y)
+
+#数值型特征数据与分类型特征数据分离，同时随机生成初始k个数值型类簇中心与k个分类型类簇中心
+def findprotos(data, k):
+    m, n = data.shape
+    num = random.sample(range(m), k)
+    print 'num:'
+    print num
+    O = [] #表示哪几个特征是数值型
+    C = [] #表示哪几个特征是分类型
+    for i in range(n):
+        try:
+            if isinstance(data.iloc[0, i], int) or isinstance(data.iloc[0, i], float):
+                O.append(i)
+            elif isinstance(data.iloc[0, i], str):
+                C.append(i)
+            else:
+                raise ValueError("the %d column of data is not a number or a string column" % i)
+        except TypeError as e:
+            print(e)
+
+    O_data = np.array(data.ix[:, O]) #数值型数据
+    C_data = np.array(data.ix[:, C]) #分类型数据
+    O_protos = np.array(O_data[num, :]) #初始k个数值型类簇中心
+    C_protos = np.array(C_data[num, :]) #初始k个分类型类簇中心
+    return O, C, O_data, C_data, O_protos, C_protos
+
+
+#kprotyotypes聚类
+def KPrototypes(data, k, max_iters=10, gamma=0):
+    m, n = data.shape
+    O, C, O_data, C_data, O_protos, C_protos = findprotos(data, k)
+    cluster = None
+    clusterShip = []
+    clusterCount = {}
+    sumInCluster = {}
+    freqInCluster = {}
+    for i in range(m):
+        mindistance = float('inf')
+        for j in range(k):
+            distance = dist(O_data[i, :], O_protos[j, :]) + \
+                       gamma * sigma(C_data[i, :], C_protos[j, :])
+            if distance < mindistance:
+                mindistance = distance
+                cluster = j
+        clusterShip.append(cluster)
+        if clusterCount.get(cluster) == None:
+            clusterCount[cluster] = 1
+        else:
+            clusterCount[cluster] += 1
+        for j in range(len(O)):
+            if sumInCluster.get(cluster) == None:
+                sumInCluster[cluster] = [O_data[i, j]] + [0] * (len(O) - 1)
+            else:
+                sumInCluster[cluster][j] += O_data[i, j]
+            O_protos[cluster, j] = sumInCluster[cluster][j] / clusterCount[cluster]
+        for j in range(len(C)):
+            if freqInCluster.get(cluster) == None:
+                freqInCluster[cluster] = [Counter(C_data[i, j])] + [Counter()] * (len(C) - 1)
+            else:
+                freqInCluster[cluster][j] += Counter(C_data[i, j])
+            C_protos[cluster, j] = freqInCluster[cluster][j].most_common()[0][0]
+
+    for t in range(max_iters):
+        for i in range(m):
+            mindistance = float('inf')
+            for j in range(k):
+                distance = dist(O_data[i, :], O_protos[j, :]) + \
+                           gamma * sigma(C_data[i, :], C_protos[j, :])
+                if distance < mindistance:
+                    mindistance = distance
+                    cluster = j
+            if clusterShip[i] != cluster:
+                oldCluster = clusterShip[i]
+                clusterShip[i] = cluster
+                clusterCount[cluster] += 1
+                clusterCount[oldCluster] -= 1
+
+                for j in range(len(O)):
+                    sumInCluster[cluster][j] += O_data[i, j]
+                    sumInCluster[oldCluster][j] -= O_data[i, j]
+                    O_protos[cluster, j] = sumInCluster[cluster][j] / clusterCount[cluster]
+                    O_protos[oldCluster, j] = sumInCluster[oldCluster][j] / clusterCount[oldCluster]
+
+                for j in range(len(C)):
+                    freqInCluster[cluster][j] += Counter(C_data[i, j])
+                    freqInCluster[oldCluster][j] -= Counter(C_data[i, j])
+                    C_protos[cluster, j] = freqInCluster[cluster][j].most_common()[0][0]
+                    C_protos[oldCluster, j] = freqInCluster[oldCluster][j].most_common()[0][0]
+
+    return clusterShip
+
+if __name__ == "__main__":
+
+
+    #载入UCI数据,把分类型数据,用字符串去进行代替即可
+    rnames = ['r1', 'c2', 'c3', 'r4', 'r5', 'c6', 'c7', 'r8', 'c9', 'r10', 'r11', 'r12', 'c13', 'label']
+    DF = pd.read_table('statlogHeart.txt', sep=' ', header=None, names=rnames)
+    label = np.array(DF.ix[:, -1])
+    DF_data = DF.ix[:, 0:13]
+    C2 = np.array(DF_data['c2'])
+    C2_N = []
+    for i in range(len(C2)):
+        if C2[i] == 0.0:
+            C2_N.append('CA')
+        else:
+            C2_N.append('CB')
+    C3 = np.array(DF_data['c3'])
+    C3_N = []
+    for i in range(len(C3)):
+        if C3[i] == 1.0:
+            C3_N.append('CA')
+        elif(C3[i] == 2.0):
+            C3_N.append('CB')
+        elif(C3[i] == 3.0):
+            C3_N.append('CC')
+        elif(C3[i] == 4.0):
+            C3_N.append('CD')
+    C6 = np.array(DF_data['c6'])
+    C6_N = []
+    for i in range(len(C6)):
+        if C6[i] == 0.0:
+            C6_N.append('CA')
+        else:
+            C6_N.append('CB')
+    C7 = np.array(DF_data['c7'])
+    C7_N = []
+    for i in range(len(C7)):
+        if C7[i] == 0.0:
+            C7_N.append('CA')
+        elif(C7[i] == 1.0):
+            C7_N.append('CB')
+        elif(C7[i] == 2.0):
+            C7_N.append('CC')
+    C9 = np.array(DF_data['c9'])
+    C9_N = []
+    for i in range(len(C9)):
+        if C9[i] == 0.0:
+            C9_N.append('CA')
+        else:
+            C9_N.append('CB')
+    C13 = np.array(DF_data['c13'])
+    C13_N = []
+    for i in range(len(C13)):
+        if C13[i] == 3.0:
+            C13_N.append('CA')
+        elif(C13[i] == 6.0):
+            C13_N.append('CB')
+        elif(C13[i] == 7.0):
+            C13_N.append('CC')
+    DF_data['c2'] = C2_N
+    DF_data['c3'] = C3_N
+    DF_data['c6'] = C6_N
+    DF_data['c7'] = C7_N
+    DF_data['c9'] = C9_N
+    DF_data['c13'] = C13_N
+
+    O, C, O_data, C_data, O_protos, C_protos = findprotos(DF_data, 2)
+    print '0:'
+    print O
+    print 'C:'
+    print C
+    print 'O_data:'
+    print O_data
+    print 'C_data:'
+    print C_data
+    print 'O_protos:'
+    print O_protos
+    print 'C_protos:'
+    print C_protos
+
+    #分类属性权重因子
+
+    gamma = 7
+
+    pred_label = KPrototypes(DF_data, 2, max_iters=100, gamma=gamma)
+    print pred_label
+    print label
+    print 'ARI:'
+    print metrics.adjusted_rand_score(label, pred_label)
+
+    # iris = load_iris()
+    # pred_label = KPrototypes(data=iris.data, k=3, max_iters=30)
