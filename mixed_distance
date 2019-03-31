@@ -1,0 +1,127 @@
+# !/usr/bin/python
+# -*- coding:utf-8 -*-
+import math
+import pandas as pd
+import numpy as np
+
+
+# 欧氏距离
+def euclid(a, b):
+    res = 0
+    lenth = len(a)
+    for i in range(lenth):
+        res = res + (a[i] - b[i]) * (a[i] - b[i])
+    return res
+
+
+# 返回字典 获取所有元素的出现次数
+def get_dic(arr):
+    result = {}
+    for i in set(arr):
+        result[i] = arr.count(i)
+    return result
+
+
+# 获取这个分类型属性的熵
+def get_H(a):
+    dic = get_dic(a)
+    lenth = len(a)
+    res = 0
+    for i in dic.values():
+        res = res - (i / float(lenth)) * math.log(i / float(lenth), 2)
+    return res
+
+
+# 获取一个矩阵中每个属性的熵占比
+def get_Hratio_all(df):
+    res = []
+    for i in df.columns:
+        res.append(get_H(list(df[i].values)))
+    sum = np.array(res).sum()
+    return res / sum
+
+
+# 使一个数值型矩阵归一化
+def norm_df(df):
+    result = pd.DataFrame({})
+    for i in df.columns:
+        arr = np.array(df[i])
+        res = []
+        max = float(arr.max())
+        min = float(arr.min())
+        max_min = max - min
+        for j in arr:
+            res.append((float(j) - min) / max_min)
+        result[i] = res
+    return result
+
+
+# 计算两个混合属性对象之间的距离
+# a：点a的数值
+# b: 点b的数值
+# mr: 数值属性的个数
+# mc: 分类属性的个数
+# Hratio_all: 所有分类属性的信息熵比
+def get_mixed_distance(a, b, mr, mc, Hratio_all):
+    len_r = float(mr)
+    len_c = float(mc)
+    euclid_ab = euclid(a[:mr], b[:mr])
+    Sr_ab = math.e ** (-euclid_ab ** 2 / 2)
+    Sc_ab = 0
+    for i in range(mc):
+        if (a[mr + i] == b[mr + i]):
+            Sc_ab = Sc_ab + Hratio_all[i]
+    S_mixed = (len_r / (len_r + len_c)) * Sr_ab + (len_c / (len_r + len_c)) * Sc_ab
+    D_mixed = 1 - S_mixed
+    return D_mixed
+
+
+if __name__ == '__main__':
+    # 读取statlogHeart.txt混合属性文件
+    # 数值属性：1,4,5,8,10,11,12
+    # 分类属性：2,3,6,7,9,13
+    rnames = ['r1', 'c1', 'c2', 'r2', 'r3', 'c3', 'c4', 'r4', 'c5', 'r5', 'r6', 'r7', 'c6', 'label']
+    DF = pd.read_table('statlogHeart.txt', sep=' ', header=None, names=rnames)
+    label = DF.ix[:, -1]
+    DF_data = DF.ix[:, 0:13]
+    mr = 7 #数值属性个数7
+    mc = 6 #分类属性个数6
+    DF_data_r = DF_data[['r1', 'r2', 'r3', 'r4', 'r5', 'r6', 'r7']]
+    DF_data_c = DF_data[['c1', 'c2', 'c3', 'c4', 'c5', 'c6']]
+    #数值属性归一化
+    DF_data_r = norm_df(DF_data_r)
+    #得到所有分类属性的信息熵比
+    Hratio_all = get_Hratio_all(DF_data_c)
+    #整理后的数值属性数据与分类属性数据重新合并
+    DF_r_c = pd.concat([DF_data_r, DF_data_c], axis=1)
+
+
+
+    #计算第一个数据与第n个数据之间的距离
+    n = 14
+    print get_mixed_distance(DF_r_c.ix[0], DF_r_c.ix[n], mr, mc, Hratio_all)
+
+
+
+
+
+
+
+    # df = pd.DataFrame({})
+    # df['r1'] = [1.1, 1.2, 2.1, 1.1, 2.1, 2.0]
+    # df['r2'] = [2.9, 3.1, 2.2, 3.2, 3.2, 2.3]
+    # df['r3'] = [3.2, 2.2, 3.2, 5.2, 2.3, 3.2]
+    # df['c1'] = [2, 2, 2, 1, 1, 1]
+    # df['c2'] = [1, 1, 2, 2, 2, 2]
+    # df['c3'] = [3, 1, 3, 2, 1, 2]
+    # mr = 3
+    # mc = 3
+    #
+    # df_r = df.ix[:, 0:mr]
+    # df_r = norm_df(df_r)
+    # df.ix[:, 0:mr] = df_r
+    # df_c = df.ix[:, mc:mr+mc]
+    # Hratio_all = get_Hratio_all(df_c)
+    # print Hratio_all
+    # D_ab = get_mixed_distance(df.ix[5], df.ix[5], mr, mc, Hratio_all)
+    # print D_ab
