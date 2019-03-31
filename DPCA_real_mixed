@@ -1,0 +1,338 @@
+# !/usr/bin/python
+# -*- coding:utf-8 -*-
+
+# 这个版本加入混合属性距离计算
+import numpy as np
+import matplotlib.pyplot as plt
+import sklearn.datasets as ds
+import matplotlib.colors
+import pandas as pd
+from sklearn.linear_model import LinearRegression
+import mixed_distance
+from sklearn import metrics
+
+
+# # 计算截断距离
+# def get_dc(data, percent, mr, mc, Hratio_all):
+#     # 计算距离
+#     distlist = []
+#     for i in range(len(data)):
+#         for j in range(len(data)):
+#             #欧氏距离
+#             #distance = np.sqrt(np.sum(np.square(data[i] - data[j])))#计算距离部分
+#             #混合距离
+#             distance = mixed_distance.get_mixed_distance(data.ix[i], data.ix[j], mr, mc, Hratio_all)
+#             if (i != j):
+#                 distlist.append(distance)
+#     sortdist = sorted(distlist)
+#     position = int(round(len(distlist) * percent / 100))
+#     dc = sortdist[position]
+#     return dc
+
+
+#计算各点间的距离单独为一个函数，因为其时间消耗程度最大
+def get_distanceAll(data, points_number, mr, mc, Hratio_all):
+    distance_all = np.random.rand(points_number, points_number)
+    for i in range(points_number):
+        for j in range(points_number):
+            # 欧氏距离
+            # distance_all[i][j] = np.sqrt(np.square(data[i][0] - data[j][0]) + np.square(data[i][1] - data[j][1]))
+            # 这里改成混合距离
+            if (i != j):
+                distance_all[i][j] = mixed_distance.get_mixed_distance(data.ix[i], data.ix[j], mr, mc, Hratio_all)
+            else:
+                distance_all[i][j] = 0
+    return distance_all
+
+# 计算截断距离、各点点密度(局部密度)大小
+def get_point_dc_density(data, percent, points_number, distance_all):
+    # 将numpy.ndarray格式转为list格式，并定义元组大小
+    # data = data.tolist()
+    distlist = []
+    point_density = np.random.rand(points_number)
+
+    # 计算得到各点间距离 一.需要改进的地方
+    for i in range(points_number):
+        for j in range(points_number):
+            if (i != j):
+                distlist.append(distance_all[i][j])
+    sortdist = sorted(distlist)
+    position = int(round(len(distlist) * percent / 100))
+    dc = sortdist[position]
+    # 计算得到各点的点密度
+    for k in range(points_number):
+        x = 0
+        for l in range(points_number):
+            if distance_all[k][l] > 0 and distance_all[k][l] < dc:
+                x = x + 1
+            point_density[k] = x
+    return dc, point_density
+
+
+# 计算点密度最大的点的聚类中心距离
+def get_max_distance(distance_all, point_density):
+    point_density = point_density.tolist()
+    a = int(max(point_density))
+    id = int(point_density.index(a))
+    c = max(distance_all[id])
+    return c
+
+
+# 获得：到点密度大于自身且距离自己最近的点的ID与它到自身的距离
+def get_min_distance_id(aa, i, distance_all, point_density):
+    min_distance = float('inf')
+    min_id = 0
+    """
+    如果传入的aa为空，说明该点是点密度最大的点，该点的聚类中心距离计算方法与其他不同
+    """
+    if aa != []:
+        for k in aa:
+            if (distance_all[i][k] < min_distance):
+                min_distance = distance_all[i][k]
+                min_id = k
+        # print('与上各点距离',min_distance,type(nn))
+        # print("最小距离：",min(min_distance),type(min(min_distance)),'\n')
+        return min_distance, min_id
+    else:
+        max_distance = get_max_distance(distance_all, point_density)  #####
+        return max_distance, -1
+
+
+# 计算得到各点的聚类中心距离与密度大于自己且距离自己最近点的ID
+def get_each_distance(distance_all, point_density):
+    nn = []
+    min_id = []
+    for i in range(len(point_density)):
+        aa = []
+        for n in range(len(point_density)):
+            if point_density[i] < point_density[n]:
+                aa.append(n)
+        # print("大于自身点密度的索引",aa,type(aa))
+        ll, ls = get_min_distance_id(aa, i, distance_all, point_density)
+        nn.append(ll)
+        min_id.append(ls)
+    return nn, min_id
+
+
+#######归一化数据
+def norm(data):
+    maxNum = max(data)
+    minNum = min(data)
+    for i in range(0, len(data)):
+        data[i] = data[i] / (maxNum - minNum)
+    return data
+
+    # 计算各点归一化局部密度point_density，归一化距离nn，权重R，权重排名T，离自己最近且比自己局部密度大的点id
+def get_dc_density_nn_T_R_minID(data, percent, points_number, distance_all):
+    # 计算截断距离、局部密度
+    dc, point_density = get_point_dc_density(data, percent, points_number, distance_all)
+    # 得到各点的聚类中心距离与密度比自己大的且距离最近点的id
+    nn, min_id = get_each_distance(distance_all, point_density)
+    # 生成id
+    id = []
+    for i in range(1, len(nn) + 1):
+        id.append(i)
+    # 归一化point_density与nn
+    point_density = norm(point_density)
+    nn = np.array(norm(nn))
+    # 把点id,归一化局部密度point_density，归一化距离nn放入pandas矩阵inform里面
+    inform = pd.DataFrame({})
+    inform['id'] = id
+    inform['point_density'] = point_density
+    inform['nn'] = nn
+    # 生成权重R
+    inform['R'] = inform['point_density'] * inform['nn']
+    # 由权重R大到小降序排序
+    inform = inform.sort_values(by='R', ascending=False)
+    # inform加入权重R排名T
+    T = []
+    for i in range(1, len(nn) + 1):
+        T.append(i)
+    inform['T'] = T
+    # 重新按id由小到大排序
+    inform = inform.sort_values(by='id', ascending=True)
+    ##################以上归一化局部密度point_density，归一化距离nn，权重R，权重排名T,离自己最近的比自己局部密度大的点id已经收集完毕###########################
+    T = np.array(inform['T'])
+    R = np.array(inform['R'])
+    return dc, point_density, nn, T, R, min_id
+
+
+#### 线性拟合，残差分析，返回奇异点的id
+def Residual_plot(x, y):
+    model = LinearRegression()
+    x = x.reshape(-1, 1)
+    y = y.reshape(-1, 1)
+    model.fit(x, y)
+    res = []
+    n = len(x)
+    y_prd = model.predict(x)
+    e = y - y_prd
+    sigama = np.std(e)
+    ## ZRE 标准化残差
+    zre = e / sigama
+    ## SRE 学生化残差
+    L_xx = n * np.var(x)
+    hii = 1 / n + (x - np.mean(x)) / L_xx  ## 杠杆值
+    sre = e / (sigama * np.sqrt(1 - hii))
+    sre = np.array(sre)
+    for i in range(0, len(x)):
+        if (sre[i] > 3):
+            res.append(1)
+        else:
+            res.append(0)
+    return res
+
+
+# 两次残差分析改进的DPCA算法
+def dpca_gai2(data, percent, distance_all):
+    # 点数目
+    points_num = len(data)
+    # 计算dc, 归一化局部密度point_density，归一化距离nn，权重排名T, 权重R, 以及与自己最近密度大于自己点的距离
+    dc, point_density, nn, T, R, minID = get_dc_density_nn_T_R_minID(data, percent, points_num, distance_all)  # 用到data
+    # 获得第一次残差分析与第二次残差分析两次是否为奇异点的结果
+    res1 = Residual_plot(point_density, nn)
+    res2 = Residual_plot(T, R)
+    # 既是第一次残差分析的奇异点又是第二残差分析奇异点的点为类簇中心点
+    # 只是第一次残差分析的奇异点而非第二残差分析奇异点的点为噪音点
+    ceters_id = []
+    noise_id = []
+    for i in range(0, points_num):
+        if (res1[i] == 1 and res2[i] == 1):
+            ceters_id.append(i)  # 中心点
+        elif (res1[i] == 1 and res2[i] == 0):
+            noise_id.append(i)  # 噪音点
+    # print '类簇中心点：'
+    # print ceters_id
+    # 将所有剩下的点划分到比其密度更高且最近的样本点所属的类簇中
+    a = []
+    b = []
+    for i in range(len(ceters_id)):
+        a.append([ceters_id[i], i])
+    for j in range(points_num):
+        b.append([j, minID[j], -1])
+    tmp = []
+    tmp1 = []
+    # 首先把类簇中心点排除
+    for i in a:
+        tmp.append(i[0])
+    for j in b:
+        if (j[0] not in tmp):
+            tmp1.append(j)
+    b = tmp1
+    # 循环为没有标签的点打上标签
+    while (len(a) < points_num):
+        tmp1 = []
+        for i in b:
+            for j in a:
+                if (i[1] == j[0]):
+                    i[2] = j[1]
+        for j in b:
+            if j[2] != -1:
+                a.append([j[0], j[2]])
+        for i in a:
+            tmp.append(i[0])
+        for j in b:
+            if (j[0] not in tmp):
+                tmp1.append(j)
+        b = tmp1
+    ########################
+    a.sort()
+    pred_label = []
+    for i in a:
+        pred_label.append(i[1])
+    return pred_label
+
+
+# 画图
+def draw_picture(X, Y, color, points_number):
+    # 用来正常显示中文标签
+    matplotlib.rcParams['font.sans-serif'] = [u'SimHei']
+    # 用来正常显示负号
+    matplotlib.rcParams['axes.unicode_minus'] = False
+    plt.scatter(X.tolist(), Y, c=color)
+    for i in range(points_number):
+        plt.text(X[i], Y[i], color[i])
+
+
+def main():
+    # ###利用make_blobas生成数据######################3
+    #     points_number = 200  # 随机点个数
+    #     cluster_number = 3  # 类簇数目
+    #     # 随机生成类簇
+    #     data, label = ds.make_blobs(points_number, centers=cluster_number, random_state=2, cluster_std=2, center_box=(-10.0, 10.0))
+
+    # #####读取UCI里面的数据1
+    # # 读取statlogHeart.txt混合属性文件
+    # # 数值属性：1,4,5,8,10,11,12
+    # # 分类属性：2,3,6,7,9,13
+    # rnames = ['r1', 'c1', 'c2', 'r2', 'r3', 'c3', 'c4', 'r4', 'c5', 'r5', 'r6', 'r7', 'c6', 'label']
+    # DF = pd.read_table('statlogHeart.txt', sep=' ', header=None, names=rnames)
+    # label = np.array(DF.ix[:, -1])
+    # DF_data = DF.ix[:, 0:13]
+    # mr = 7 #数值属性个数7
+    # mc = 6 #分类属性个数6
+    # DF_data_r = DF_data[['r1', 'r2', 'r3', 'r4', 'r5', 'r6', 'r7']]
+    # DF_data_c = DF_data[['c1', 'c2', 'c3', 'c4', 'c5', 'c6']]
+    # #数值属性归一化
+    # DF_data_r = mixed_distance.norm_df(DF_data_r)
+    # #得到所有分类属性的信息熵比
+    # Hratio_all = mixed_distance.get_Hratio_all(DF_data_c)
+    # #整理后的数值属性数据与分类属性数据重新合并
+    # data_r_c = pd.concat([DF_data_r, DF_data_c], axis=1)
+    # #####读取UCI里面的数据
+
+
+    #####读取UCI里面的数据2
+    # 读取Dermatology.txt混合属性文件
+    # 数值属性：34
+    # 分类属性：1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33
+    rnames = ['c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'c7', 'c8', 'c9', 'c10', 'c11', 'c12', 'c13', 'c14', 'c15',
+              'c16', 'c17', 'c18', 'c19', 'c20', 'c21', 'c22', 'c23', 'c24', 'c25', 'c26', 'c27', 'c28', 'c29',
+              'c30', 'c31', 'c32', 'c33', 'r34', 'label']
+    DF = pd.read_table('Dermatology.txt', sep=',', header=None, names=rnames)
+    label = np.array(DF.ix[:, -1])
+    DF_data = DF.ix[:, 0:34]
+    mr = 1 #数值属性个数2
+    mc = 33 #分类属性个数7
+    DF_data_r = DF_data[['r34']]
+    DF_data_c = DF_data[['c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'c7', 'c8', 'c9', 'c10', 'c11', 'c12', 'c13', 'c14', 'c15',
+              'c16', 'c17', 'c18', 'c19', 'c20', 'c21', 'c22', 'c23', 'c24', 'c25', 'c26', 'c27', 'c28', 'c29',
+              'c30', 'c31', 'c32', 'c33']]
+    #数值属性归一化
+    DF_data_r = mixed_distance.norm_df(DF_data_r)
+    #得到所有分类属性的信息熵比
+    Hratio_all = mixed_distance.get_Hratio_all(DF_data_c)
+    #整理后的数值属性数据与分类属性数据重新合并
+    data_r_c = pd.concat([DF_data_r, DF_data_c], axis=1)
+    # #####读取UCI里面的数据
+
+
+
+#############聚类#######################
+    print 'start clustering:'
+    points_number = len(data_r_c) #数据的数量
+    percent = 4.84  #  DPCA截断距离平均密度百分比
+    distance_all = get_distanceAll(data_r_c, points_number, mr, mc, Hratio_all)#这一步最耗时
+    pred_label = np.array(dpca_gai2(data_r_c, percent, distance_all))
+    print 'label:'
+    print label
+    print 'pred_label:'
+    print pred_label
+    print 'ARI:'
+    print metrics.adjusted_rand_score(label, pred_label)
+    print 'Fowlkes-Mallows scores:'
+    print metrics.fowlkes_mallows_score(label, pred_label)
+
+###展示两幅决策图#####
+    #测验计算dc、dc, point_density, nn, T, R, minID
+    dc, point_density, nn, T, R, minID = get_dc_density_nn_T_R_minID(data_r_c, percent, points_number, distance_all)
+    #图point_density--nn
+    plt.figure(0)
+    draw_picture(point_density, nn, label, points_number)
+    plt.figure(1)
+    draw_picture(T, R, label, points_number)
+    plt.show()
+###展示两幅决策图#####
+
+if __name__ == '__main__':
+    main()
